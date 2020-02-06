@@ -5,7 +5,6 @@
     <ProductType>{{ProductType}}</ProductType>
     <SoftwareName>{{SoftwareName}}</SoftwareName>
     <SoftwareRelease>{{SoftwareRelease}}</SoftwareRelease>
-    <SDC_PROD>SOC</SDC_PROD>
     <ManualValidationStatus>VALID</ManualValidationStatus>
     <ExpirationDate>{{ExpDate}}</ExpirationDate>
     <PipelineRun>PipelineRun</PipelineRun>

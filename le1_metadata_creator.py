@@ -162,11 +162,12 @@ class LE1_Metadata_Creator:
         Set the appropriate dates
         """
         str2date = lambda t: datetime.strptime(t[:-1], "%Y%m%dT%H%M%S.%f")
-        date2str = lambda t: t.strftime("%Y%m%dT%H%M%S.%f")[:-3] + 'Z'
+        date2str = lambda t: t.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + 'Z'
 
         date = str2date(sdate)
         sdateExpiration = date2str(date + timedelta(days=365*50))
         sdateMjd = date_to_mjd(date)
+        sdate = date2str(date)
 
         return self.set('ExpDate', sdateExpiration).\
                    set('CreationDate', sdate).\
