@@ -187,6 +187,12 @@ class LE1_Disseminator:
         prodId = f'{prodType}-{prodInstance}_{prodVersion}'
         prodFile = fname
 
+        #------- BEGIN: TO BE REMOVED --------
+        prodType = f'dummy_{prodType}'
+        prodId = f'dummy_{prodId}'
+        prodFile = f'dummy_{prodFile}'
+        #-------- END: TO BE REMOVED ---------
+
         # Create metadata
         sht = 'OPENED'
         cal = 'false'
@@ -239,13 +245,13 @@ class LE1_Disseminator:
         folder = os.path.join(_filedir_, 'generated')
 
         # Create metadata file
-        xmlfile = os.path.join(folder, fname[:-4] + 'xml')
+        xmlfile = os.path.join(folder, prodFile[:-4] + 'xml')
         with open(xmlfile, 'w') as fxml:
             fxml.write(le1meta.content)
 
         # Create data file
-        datafile = os.path.join(folder, fname)
-        self.create_data_product(obsid, seqid, dither, t, inst, act, ra, dec, fname)
+        datafile = os.path.join(folder, prodFile)
+        self.create_data_product(obsid, seqid, dither, t, inst, act, ra, dec, prodFile)
 
         return folder
 
@@ -266,21 +272,42 @@ class LE1_Disseminator:
                         '--SDC=SOC',
                         f'--username={Credentials["u"]}',
                         f'--password={Credentials["p"]}']
-            self.logger.debug(f'Ingesting data in {folder} . . .')
+
+            # Show info
+            self.logger.debug(f'Ingesting data in {folder}:')
+            gen_files = glob(f'{folder}/*')
+            for file in gen_files:
+                f = os.path.basename(file)
+                self.logger.debug(f' - {f}')
             self.logger.debug(f'Calling: {sys.argv}')
+
+            # Do the actual ingestion
             #ab_ingest_fn()
-            self.move_files(folder)
+
+            # Move to the ingested folder
+            self.move_files(folder, truncate=True)
+
         except Exception as ee:
             self.logger.error(str(ee))
+
         finally:
             sys.argv = saved_argv
 
 
-    def move_files(self, folder):
+    def move_files(self, folder, truncate=False):
         """
         Move ingested files from the 'generated' folder to the 'ingested' folder
         """
         tgt_folder = os.path.join(os.path.dirname(folder), 'ingested')
+
+        if truncate:
+            fits_file = glob(f'{folder}/*.fits')[0]
+            fits_file_tmp = f'{fits_file}.tmp'
+            with fits.open(fits_file) as hdulist:
+                primhdu = hdulist[0]
+                primhdu.writeto(fits_file_tmp)
+            shutil.move(fits_file_tmp, fits_file)
+
         gen_files = glob(f'{folder}/*')
         for file in gen_files:
             self.logger.debug(f'Moving file {file} . . .')
