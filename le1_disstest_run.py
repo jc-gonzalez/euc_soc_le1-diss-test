@@ -188,9 +188,10 @@ class LE1_Disseminator:
         prodFile = fname
 
         #------- BEGIN: TO BE REMOVED --------
-        prodType = f'dummy_{prodType}'
-        prodId = f'dummy_{prodId}'
-        prodFile = f'dummy_{prodFile}'
+        tag = 'dummy_jcg_test_2__'
+        prodType = f'{tag}{prodType}'
+        prodId = f'{tag}{prodId}'
+        prodFile = f'{tag}{prodFile}'
         #-------- END: TO BE REMOVED ---------
 
         # Create metadata
