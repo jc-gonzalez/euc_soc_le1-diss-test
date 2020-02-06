@@ -8,7 +8,7 @@ echo "" > ${datafile}
 while true ; do
 
     ifconfig eth0 | \
-        awk -v thedate=$(date +"%Y%m%d_%H%M%S") 'BEGIN{printf "%s ",thedate;}{printf "%s ",$0;}' | \
+        awk -v thedate=$(date +"%Y%m%d_%H%M%S") 'BEGIN{printf "%s ",thedate;}{printf "%s ",$0;}END{print "";}' | \
         sed -e 's/[ ]+/ /g' | tee -a ${datafile}
 
     sleep 10
