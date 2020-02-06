@@ -11,6 +11,14 @@ Generates
 import os
 import sys
 import json
+import time
+import shutil
+
+from astropy.coordinates import SkyCoord, Angle
+import astropy.units as u
+from astropy.io import fits
+
+from glob import glob
 
 from pprint import pprint
 from datetime import datetime, timedelta
@@ -49,19 +57,36 @@ __maintainer__ = "Euclid SOC Team"
 
 #----------------------------------------------------------------------
 
+class EndOfIngestion(Exception):
+    pass
+
 class LE1_Disseminator:
     """
     Class LE1_Disseminator
 
     Class to execute the generation and ingestion of LE1 products
     """
-    def __init__(self):
+    def __init__(self, num_obs=None, sleep=3):
         self.logger = logging.getLogger()
         self.le1_vis_meta = LE1_VIS_Metadata_Creator(self.logger)
         self.le1_nir_meta = LE1_NIR_Metadata_Creator(self.logger)
         self.le1_sir_meta = LE1_SIR_Metadata_Creator(self.logger)
         self.obsidfile = os.path.join(_filedir_, 'obsid.dat')
+
         self.le1_schedules_activities = os.path.join(_filedir_, 'data/le1_generated.json')
+
+        self.num_obs = num_obs
+        self.sleep = sleep
+
+        self.orig_vis_file = os.path.join(_filedir_,
+                                          'data/QH_CCD2_ZOD_721_321_MIXED__NO_COMPRESSED.fits')
+        self.orig_nir_file = os.path.join(_filedir_,
+                                          'data/EUC_SIM_NIR-34080-4-W-Nominal_20250520T063204.0Z.fits')
+        self.orig_sir_file = os.path.join(_filedir_,
+                                          'data/EUC_SIM_SIR-34080-1-W-Nominal_20250520T063201.0Z.fits')
+        self.orig_file = {'VIS': self.orig_vis_file,
+                          'NIR': self.orig_nir_file,
+                          'SIR': self.orig_sir_file}
 
     def prepare(self):
         """
@@ -73,14 +98,14 @@ class LE1_Disseminator:
                 obsid_data = json.load(fobs)
             # Prepare logging system
             last_exec = obsid_data["last_execution"]
-            self.configureLogs(logging.INFO, os.path.join(_filedir_, f'log/le1_diss_run_{last_exec + 1}.log'))
+            self.configureLogs(logging.DEBUG, os.path.join(_filedir_, f'log/le1_diss_run_{last_exec + 1}.log'))
             self.logger.info('Resuming dissemination test (ingestion of LE1 data)')
             return (obsid_data["last_obs"],
                    obsid_data["last_row"],
                    last_exec)
         else:
             # Prepare logging system
-            self.configureLogs(logging.INFO, os.path.join(_filedir_, 'log/le1_diss_run_1.log'))
+            self.configureLogs(logging.DEBUG, os.path.join(_filedir_, 'log/le1_diss_run_1.log'))
             self.logger.info('Starting dissemination test (ingestion of LE1 data)')
             return (0, -1, 0)
 
@@ -118,8 +143,38 @@ class LE1_Disseminator:
                 lgr.addHandler(f_handler)
             # logger.debug('Configuring logger with id "{}"'.format(lname))
 
+    def convert_ecliptic_to_equatorial(self, lon, lat):
+        """
+        Converts the coordinates that come from the OSS (Ecliptic Longitute & Latitude)
+        to Equatorial coordinates
+        """
+        lonlat = SkyCoord(lon=Angle(lon, unit=u.deg),
+                          lat=Angle(lat, unit=u.deg), frame='barycentricmeanecliptic')
+        radec: SkyCoord = lonlat.transform_to(frame='icrs')
+        return radec.ra.value, radec.dec.value
+
+    def create_data_product(self, obsid, seqid, dither, date, inst, act, ra, dec, fname):
+        """
+        Create the actual FITS LE1 file
+        """
+        tgt_fname = os.path.join(_filedir_, 'generated', fname)
+        os.link(self.orig_file[inst], tgt_fname)
+
+        with fits.open(tgt_fname, 'update') as hdulist:
+            hdu = hdulist[0]
+            hdu.header['DATE'] = date
+            hdu.header['DATE-OBS'] = date
+            hdu.header['INSTRUME'] = f'{inst}     '
+            hdu.header['OBSTYPE'] = act
+            hdu.header['RA'] = ra
+            hdu.header['DEC'] = dec
+            hdu.header['OPERID'] = seqid
+            hdu.header['OBSID'] = obsid
+            hdu.header['DITHER'] = dither
+
+
     def create_product(self, obsid, fldid, seqid, dither, subseq,
-                       totseq, t, ra, dec, orient, inst, act, fname):
+                       totseq, t, lon, lat, orient, inst, act, fname):
         """
         Create products for the obs. and epoch
         """
@@ -161,6 +216,8 @@ class LE1_Disseminator:
                 fwa = 'CLOSED' if act == 'D' else act
                 gwa = 'OPENED'
 
+        # Convert the coordinates
+        ra, dec = self.convert_ecliptic_to_equatorial(lon, lat)
 
         # Set parameter values
         le1meta = self.le1_vis_meta if inst == 'VIS' else \
@@ -182,14 +239,13 @@ class LE1_Disseminator:
         folder = os.path.join(_filedir_, 'generated')
 
         # Create metadata file
-        xmlfile = os.path.join(folder, fname[:-4] + '.xml')
+        xmlfile = os.path.join(folder, fname[:-4] + 'xml')
         with open(xmlfile, 'w') as fxml:
             fxml.write(le1meta.content)
 
         # Create data file
         datafile = os.path.join(folder, fname)
-        with open(datafile, 'w') as fdata:
-            fdata.write('')
+        self.create_data_product(obsid, seqid, dither, t, inst, act, ra, dec, fname)
 
         return folder
 
@@ -210,12 +266,25 @@ class LE1_Disseminator:
                         '--SDC=SOC',
                         f'--username={Credentials["u"]}',
                         f'--password={Credentials["p"]}']
-            #self.logger.info(f'Calling: {sys.argv}')
+            self.logger.debug(f'Ingesting data in {folder} . . .')
+            self.logger.debug(f'Calling: {sys.argv}')
             #ab_ingest_fn()
+            self.move_files(folder)
         except Exception as ee:
             self.logger.error(str(ee))
         finally:
             sys.argv = saved_argv
+
+
+    def move_files(self, folder):
+        """
+        Move ingested files from the 'generated' folder to the 'ingested' folder
+        """
+        tgt_folder = os.path.join(os.path.dirname(folder), 'ingested')
+        gen_files = glob(f'{folder}/*')
+        for file in gen_files:
+            self.logger.debug(f'Moving file {file} . . .')
+            shutil.move(file, tgt_folder)
 
 
     def run(self):
@@ -228,8 +297,8 @@ class LE1_Disseminator:
         last_obs, last_row, last_exec = self.prepare()
 
         if last_exec < 0:
-            raise Exception('The ingestion of LE1 Products for the LE1 ' +
-                            'DSS Dissemination test is completed.')
+            raise EndOfIngestion('The ingestion of LE1 Products for the LE1 ' +
+                                'DSS Dissemination test is completed.')
 
         # Retrieve data from file
         with open(self.le1_schedules_activities) as fle1:
@@ -245,10 +314,13 @@ class LE1_Disseminator:
         obs_per_day = summ["obs_per_day"]
         npts        = summ["npts"]
 
+        if self.num_obs is None:
+            self.num_obs = obs_per_day
+
         if last_obs < 1:
-            final_obs = float(minobs) + obs_per_day - 1
+            final_obs = float(minobs) + self.num_obs - 1
         else:
-            final_obs = last_obs + obs_per_day
+            final_obs = last_obs + self.num_obs
 
         self.logger.info(f'====== LE1 Dissemination Test - Execution {last_exec + 1} ======')
 
@@ -266,7 +338,7 @@ class LE1_Disseminator:
             t, dt = le1["time"][row]
             obsid, fldid, seqid, dither, subseq, totseq = le1["obs"][row]
             inst, act = le1["activity"][row]
-            ra, dec, orient = le1["point"][row]
+            lon, lat, orient = le1["point"][row]
             fname, size = le1["file"][row]
 
             if float(obsid) > final_obs: break
@@ -276,10 +348,13 @@ class LE1_Disseminator:
 
             # Create product (data and metadata)
             fldr = self.create_product(obsid, fldid, seqid, dither, subseq, totseq,
-                                  t, ra, dec, orient, inst, act, fname)
+                                  t, lon, lat, orient, inst, act, fname)
 
             # Ingest files into EAS
             self.ingest_files(folder=fldr)
+
+            # Wait for a time before next ingestion
+            time.sleep(self.sleep)
 
             # End of loop
             last_obs = float(obsid)
