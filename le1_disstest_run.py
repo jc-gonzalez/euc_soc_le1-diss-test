@@ -229,6 +229,7 @@ class LE1_Disseminator:
         le1meta = self.le1_vis_meta if inst == 'VIS' else \
                  (self.le1_nir_meta if inst == 'NIR' else self.le1_sir_meta)
 
+        le1meta.reset()
         le1meta. \
             setProduct(prodId, prodType, prodFile). \
             setSW(). \
