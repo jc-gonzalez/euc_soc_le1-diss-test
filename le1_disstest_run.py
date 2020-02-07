@@ -98,14 +98,16 @@ class LE1_Disseminator:
                 obsid_data = json.load(fobs)
             # Prepare logging system
             last_exec = obsid_data["last_execution"]
-            self.configureLogs(logging.DEBUG, os.path.join(_filedir_, f'log/le1_diss_run_{last_exec + 1}.log'))
+            self.logfile = os.path.join(_filedir_, f'log/le1_diss_run_{last_exec + 1}.log')
+            self.configureLogs(logging.DEBUG, self.logfile)
             self.logger.info('Resuming dissemination test (ingestion of LE1 data)')
             return (obsid_data["last_obs"],
                    obsid_data["last_row"],
                    last_exec)
         else:
-            # Prepare logging system
-            self.configureLogs(logging.DEBUG, os.path.join(_filedir_, 'log/le1_diss_run_1.log'))
+            # Prepare logging systema
+            self.logfile = os.path.join(_filedir_, 'log/le1_diss_run_1.log')
+            self.configureLogs(logging.DEBUG, self.logfile)
             self.logger.info('Starting dissemination test (ingestion of LE1 data)')
             return (0, -1, 0)
 
@@ -188,7 +190,7 @@ class LE1_Disseminator:
         prodFile = fname
 
         #------- BEGIN: TO BE REMOVED --------
-        tag = 'dummy_jcg_test_2__'
+        tag = 'dummy_jcg_test_3__'
         prodType = f'{tag}{prodType}'
         prodId = f'{tag}{prodId}'
         prodFile = f'{tag}{prodFile}'
@@ -284,7 +286,7 @@ class LE1_Disseminator:
             self.logger.debug(f'Calling: {sys.argv}')
 
             # Do the actual ingestion
-            #ab_ingest_fn()
+            ab_ingest_fn()
 
             # Move to the ingested folder
             self.move_files(folder, truncate=True)
@@ -314,6 +316,14 @@ class LE1_Disseminator:
         for file in gen_files:
             self.logger.debug(f'Moving file {file} . . .')
             shutil.move(file, tgt_folder)
+
+
+    def sendNotification(self):
+        """
+        Sends the log file via e-mail to user
+        """
+        cmd = f'mail -s "End of execution - {self.logfile}" jcgonzalez@sciops.esa.int < {self.logfile}'
+        os.system(cmd)
 
 
     def run(self):
@@ -406,6 +416,8 @@ class LE1_Disseminator:
 
         if execFinished:
             self.logger.info(f'LE1 DSS Dissemination Test ingestion completed.')
+
+        self.sendNotification()
 
 
 if __name__ == '__main__':
